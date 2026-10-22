@@ -126,6 +126,12 @@ where
         Poll::Ready(Ok(()))
     }
 
+    /// Returns whether a frame can be buffered without first flushing the
+    /// underlying I/O object.
+    pub(crate) fn has_capacity(&self) -> bool {
+        self.encoder.has_capacity()
+    }
+
     /// Buffer a frame.
     ///
     /// `poll_ready` must be called first to ensure that a frame may be
@@ -173,7 +179,7 @@ where
                     }
                     continue;
                 }
-                match self.encoder.next {
+                let n = match self.encoder.next {
                     Some(Next::Data(ref mut frame)) => {
                         tracing::trace!(queued_data_frame = true);
                         let mut buf = (&mut self.encoder.buf).chain(frame.payload_mut());
@@ -188,6 +194,11 @@ where
                         ))?
                     }
                 };
+                if n == 0 {
+                    // No progress is possible; retrying would busy-loop.
+                    tracing::trace!("write returned zero, but non-zero bytes remaining");
+                    return Poll::Ready(Err(io::ErrorKind::WriteZero.into()));
+                }
             }
 
             match self.encoder.unset_frame() {
@@ -410,6 +421,36 @@ impl<T: Unpin, B> Unpin for FramedWrite<T, B> {}
 #[cfg(test)]
 mod owned_tests {
     use super::*;
+
+    #[test]
+    fn borrowed_write_zero_returns_error_without_retrying() {
+        struct ZeroWriter(bool);
+        impl AsyncWrite for ZeroWriter {
+            fn poll_write(mut self: Pin<&mut Self>, _: &mut Context<'_>, _: &[u8]) -> Poll<io::Result<usize>> {
+                assert!(!self.0, "zero-progress writes must not be retried");
+                self.0 = true;
+                Poll::Ready(Ok(0))
+            }
+            fn poll_flush(self: Pin<&mut Self>, _: &mut Context<'_>) -> Poll<io::Result<()>> {
+                Poll::Ready(Ok(()))
+            }
+            fn poll_shutdown(self: Pin<&mut Self>, _: &mut Context<'_>) -> Poll<io::Result<()>> {
+                Poll::Ready(Ok(()))
+            }
+        }
+        struct Noop;
+        impl std::task::Wake for Noop {
+            fn wake(self: std::sync::Arc<Self>) {}
+        }
+        let mut framed = FramedWrite::new(ZeroWriter(false));
+        framed.buffer(frame::Data::new(frame::StreamId::from(1), Bytes::from_static(b"payload")).into()).unwrap();
+        let waker = std::task::Waker::from(std::sync::Arc::new(Noop));
+        let mut cx = Context::from_waker(&waker);
+        match framed.flush(&mut cx) {
+            Poll::Ready(Err(error)) => assert_eq!(error.kind(), io::ErrorKind::WriteZero),
+            other => panic!("expected WriteZero, got {other:?}"),
+        }
+    }
 
     #[derive(Debug)]
     struct Io {

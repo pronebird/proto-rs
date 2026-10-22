@@ -105,7 +105,7 @@ async fn eager_snapshots_interoperate_over_plain_and_tls_with_gzip() {
                         .await
                         .unwrap();
                 });
-                let channel = proto_rs::grpc::AutoChannel::connect(endpoint, proto_rs::grpc::ChannelOptions { kernel_zero_copy: true })
+                let channel = proto_rs::grpc::AutoChannel::connect(endpoint, proto_rs::grpc::ChannelOptions { kernel_zero_copy: true, ..Default::default() })
                     .await
                     .unwrap();
                 if tls {

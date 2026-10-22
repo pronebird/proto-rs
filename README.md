@@ -850,7 +850,7 @@ Native support for Solana SDK types:
 | `VersionedMessage` | `oneof` for legacy, V0, and V1 |
 | `Transaction`, `VersionedTransaction` | signatures and message |
 
-Supports `solana-message` / `solana-transaction` 5.1, including TxnV1, and the instruction/transaction `BailOut` errors. Existing error tags are unchanged.
+Supports `solana-message` / `solana-transaction` 6, including TxnV1, and the instruction/transaction `BailOut` errors. Existing error tags are unchanged.
 
 Instruction and transaction encoding borrows signatures, account lists, and instruction data without cloning payload collections. These adapters produce **protobuf**, not Solana's native transaction wire format. Decoding does not sanitize transactions or verify signatures; callers must do that before execution. V1 config preserves `None` versus `Some(0)`.
 
